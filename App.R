@@ -5,6 +5,7 @@ library(openxlsx)
 library(writexl)
 library(plotly)
 library(scales)
+library(ggthemes)
 library(crosstalk)
 library(shiny)
 library(shinyWidgets)
@@ -83,7 +84,7 @@ data4 <- data4 %>%
 #*********************************
 #  UI prep
 #*********************************
-
+data4w <- data4
 #----------------------------------------------------
 #  list for selecting state, year, series, Num_Denom
 #----------------------------------------------------
@@ -128,8 +129,6 @@ Num_Denom_ <- data4 %>%
 Num_Denom <- as.list(Num_Denom_$`Numerator / Denominator`)
 
 
-data4w <- data4
-
 #==================
 # UI
 #==================  
@@ -140,28 +139,26 @@ ui <- shinyUI(fluidPage(
     HTML('
          #sidebar {
             background-color: #EBEEF9;
-        }
+        }',
 
-         # main {
-            background-color: #EBEEF9;
-        }
-         
-        body, label, input, button, select { 
+        
+         ' body, label, input, button, select { 
           font-family: "Arial";
-        }
+        }', 
          
-         .nav-tabs {
+        ' .nav-tabs {
            background-color: #EBEEF9;
-         } '
-         
+         } ', 
+        
+              
          )
   )),
   
   
   tags$style(type="text/css",
              ".shiny-output-error { visibility: hidden; }",
-             ".shiny-output-error:before { visibility: hidden; }"
-  ),
+             ".shiny-output-error:before { visibility: hidden; }",
+              ),
   
   headerPanel("Preschool enrolments and selected denominators"),
   
@@ -197,7 +194,7 @@ ui <- shinyUI(fluidPage(
                                           "Preschool (original YBFS) / 1st year of school (lagged 1 yr)",
                                           "Preschool (original YBFS) / State-specific YBFS"),
                                           
-                                        selected = c("Preschool (4-5 yrs) / ERP (4yrs)"))
+                                        selected = c("Preschool (4-5 yrs) / ERP (4yrs)", "Preschool (SS YBFS) / ERP (4yrs)"))
     ),
     
     pickerInput('State', 'Select states', choices = c(State),
@@ -219,9 +216,9 @@ ui <- shinyUI(fluidPage(
     width = 3),
   
     mainPanel( 
-    tabsetPanel(type = "tabs",
+    tabsetPanel(type = "tabs", 
                 tabPanel("Plot", plotlyOutput('plot')),
-                tabPanel("Data table", DT::dataTableOutput('Table')),
+                tabPanel(style = "overflow-y:scroll; max-height: 700px","Data table", DT::dataTableOutput('Table')),
                 tabPanel("About",
                          br(),
                          hr(),
@@ -301,14 +298,16 @@ server <- function(input, output) {
   data4c <- reactive({ data4 %>%
       filter(state %in% S()$State) %>%
       filter(Year %in% Y()$Year) %>%
-      filter(Series %in% D()$Series)
+      filter(Series %in% D()$Series) %>% 
+      rename(Percent = Prop) 
   })
   
   
   data4r <- reactive({ data4 %>%
       filter(state %in% S()$State) %>%
       filter(Year %in% Y()$Year) %>%
-      filter(`Numerator / Denominator` %in% N()$Num_Denom)
+      filter(`Numerator / Denominator` %in% N()$Num_Denom) %>% 
+      rename(Percent = Prop) 
   })
   
   
@@ -348,12 +347,14 @@ server <- function(input, output) {
   output$plot <- renderPlotly({
     
     if(input$Plot == "Preschool enrolment (%)"){
-      p <- ggplot(data4r(), aes(x= Year, y= Prop, 
+      p <- ggplot(data4r(), aes(x= Year, y= Percent, 
                                 colour = `Numerator / Denominator`, 
                                 group = `Numerator / Denominator`)) +
         geom_line(size = .8)+
         geom_point(size = 2)+
         geom_hline(yintercept=100, size = 0.5, alpha = 0.5, color = "black")+
+        theme_few()+
+        scale_color_few()+
         xlab("Year")+
         ylab("%")
       
@@ -365,6 +366,8 @@ server <- function(input, output) {
         geom_line(size = .8)+
         geom_point(size = 2) +
         scale_y_continuous(labels = comma)+
+        theme_few()+
+        scale_color_few()+
         ylab("n")
       
       p <- p + facet_wrap(~ state, scales = "free")
@@ -401,17 +404,15 @@ server <- function(input, output) {
     content = function(file) { write_xlsx(Tabler(), path = file) }
         )
   
-  
-  
+    
   output$downloadDataAll <- downloadHandler(
    filename = function() {
    paste("All YBFS data", ".xlsx")},
    content = function(file) { write_xlsx(TableA(), path = file) }
   )
-  
+ 
   
 }
-
 
 #========================================  
 shinyApp(ui, server)
