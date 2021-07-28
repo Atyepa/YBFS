@@ -128,6 +128,8 @@ Num_Denom_ <- data4 %>%
 Num_Denom <- as.list(Num_Denom_$`Numerator / Denominator`)
 
 
+data4w <- data4
+
 #==================
 # UI
 #==================  
