@@ -23,7 +23,7 @@ download.file(daturl,"Assembled_YBFS_28072021.xlsx", mode = "wb" )
 data1 <- read.xlsx("Assembled_YBFS_28072021.xlsx")
 
 data1 <- data1 %>%
-  select(-1,-13)
+  select(-1)
 
 DI <- data1 %>%
   select(Data_item) %>%
@@ -80,17 +80,13 @@ data4 <- data4 %>%
   mutate(Year = factor(Year))
 
 
-#---Pivot wide for output (for later) ---
-data4w <- data4
-
-
 #*********************************
-# Shiny
+#  UI prep
 #*********************************
 
-#----------------------------------
+#----------------------------------------------------
 #  list for selecting state, year, series, Num_Denom
-#----------------------------------
+#----------------------------------------------------
 
 State <- data4 %>%
   mutate(State = as.character(state)) %>%
@@ -158,7 +154,6 @@ ui <- shinyUI(fluidPage(
          
          )
   )),
-  
   
   
   tags$style(type="text/css",
@@ -234,7 +229,7 @@ ui <- shinyUI(fluidPage(
                 p("This app is designed to assist evaluation of the performance indicators of access to early childhood education. The side-by-side comparison of the three existing measures of preschool enrolment along with three population denominators provides important context for decisions on future measurement and reporting requirements."),
                 p(tags$b("Preschool "), "refers to enrolments in preschools and centre based day care providing preschool programs and where an ", tags$b("enrolment "), "is counted if a child attended the preschool program for at least one hour during the reference period, or were absent due to illness or extended holiday leave and expected to return. For more information, please refer to 'Preschool program' in the ",
                 tags$a(href="https://www.abs.gov.au/methodologies/preschool-education-australia-methodology/2020", target="_blank",
-                         "Methodology"), "section of Preschool Education, Australia"),  
+                         "Methodology"), "section of Preschool Education, Australia."),  
                 br(),
                 
                 tags$h4(tags$b("Data definitions")),
@@ -253,14 +248,14 @@ ui <- shinyUI(fluidPage(
                       
                       br(),
                       
-                      tags$li(tags$b("ERP (4yrs)"), " - the ", tags$em("preliminary"), "Estimated Resident Population of four year olds. The ERP is Australia's official measure of the population of Australia and is based on the concept of usual residence. It refers to all people, regardless of nationality, citizenship or legal status, who usually live in Australia, with the exception of foreign diplomatic personnel and their families. It includes usual residents who are overseas for fewer than 12 months. It excludes overseas visitors who are in Australia for fewer than 12 months. Following the initial publication of the ERP for any given reference  period, ABS revises the previously published figure as births, deaths and migration components get updated. The 'preliminary' ERP is presented here because this reflects the actual data provided in each year to measure the UANP indicator.  To access the original historical data, please see the time-series spreadsheets available for download from the ",
+                      tags$li(tags$b("ERP (4yrs)"), " - the ", tags$em("preliminary"), "Estimated Resident Population of four year olds. The ERP is Australia's official measure of the population of Australia and is based on the concept of usual residence. It refers to all people, regardless of nationality, citizenship or legal status, who usually live in Australia, with the exception of foreign diplomatic personnel and their families. It includes usual residents who are overseas for fewer than 12 months. It excludes overseas visitors who are in Australia for fewer than 12 months. Upon the initial publication and for the 12 months following, the ERP status is termed 'preliminary'.  After this time, ABS updates the ERP to 'revised' based on more complete information on the components (births, deaths, migration).  The 'preliminary' ERP is presented here because this reflects the actual data provided in each year to measure the UANP indicator.  To access the original historical data, please see the time-series spreadsheets available for download from the ",
                            tags$a(href="https://www.abs.gov.au/statistics/people/population/national-state-and-territory-population", target="_blank",
-                                  "'Previous releases' section of National, state and territory population ")),
+                                  "'Previous releases' section of National, state and territory population.")),
                       br(),
                       
-                      tags$li(tags$b("ERP (4yrs, r)"), " - the ", tags$em("revised"), "ERP of four year olds. As noted above, the initially published ERP estimates are over subsequent quarters as population components are updated. While the timeliness imperative for national reporting means these revised figures are not used, their inclusion here can be used to assess the resulting effect of using preliminary ERP. Data source: ",
+                      tags$li(tags$b("ERP (4yrs, r)"), " - the ", tags$em("revised"), "ERP of four year olds. The ERP figures for a given period remain 'preliminary' for 12 months following their intial publication, before becoming 'revised' and become 'revised' as population components are updated. While the timeliness imperative for national reporting means these revised figures are not used, their inclusion here can be used to assess the data quality impact of using preliminary ERP. Data source: ",
                               tags$a(href="https://stat.data.abs.gov.au/", target="_blank",
-                                     "ABS.Stat "), "Quarterly Population Estimates (ERP), by State/Territory, Sex and Age"),
+                                     "ABS.Stat "), "Quarterly Population Estimates (ERP), by State/Territory, Sex and Age."),
                       br(),
                            
                       tags$li(tags$b("1st year of school (lagged 1 yr)"), " - the number of children who were enrolled in their first year of school in the year following the preschool reference year. Also known as Transition to primary school Foundation year (Year prior to year 1). The rationale for including this as a denominator is that it effectively measures the population who, 12 months earlier, were in their year before school. However, the numbers are not expected to perfectly agree with the target number of children enrolled in a preschool program the previous year because of interstate and overseas migration and the presence of repeating students in their first year of school.  Data source: ",
@@ -275,13 +270,12 @@ ui <- shinyUI(fluidPage(
                 
                 tags$h4(tags$b("Further information")),
                 
-                      tags$p("For more information, please contact ABS' Education and Training Statistics Section:",
+                      tags$p("For more information, please contact ABS Education and Training Statistics Section:",
                              a("NCETS_2015_Plus_WDB@abs.gov.au", href="mailto:NCETS_2015_Plus_WDB@abs.gov.au"))
                       
                          ))))))
-                      
+                    
                        
-  
 ## Server
 server <- function(input, output) {
   
@@ -317,14 +311,23 @@ server <- function(input, output) {
   
   
   
-  Table <-  reactive({ data4w %>%
+  Tablec <-  reactive({ data4w %>%
       filter(state %in% S()$State) %>%
       filter(Year %in% Y()$Year) %>%
-      filter(`Numerator / Denominator` %in% N()$Num_Denom) %>% 
       filter(Series %in% D()$Series) %>% 
       drop_na() %>% 
       rename(Percent = Prop) 
   })
+  
+  
+  Tabler <-  reactive({ data4w %>%
+      filter(state %in% S()$State) %>%
+      filter(Year %in% Y()$Year) %>%
+      filter(`Numerator / Denominator` %in% N()$Num_Denom) %>% 
+      drop_na() %>% 
+      rename(Percent = Prop) 
+  })
+  
   
   TableA <-  reactive({ data4w %>%
               drop_na() %>% 
@@ -369,23 +372,34 @@ server <- function(input, output) {
     
   })
   
+  
   output$Table <- DT::renderDataTable({
-    Table()  
+    
+    
+    if(input$Plot == "Enrolment & population numbers"){
+      T <- Tablec()
+
+    }
+  
+    if(input$Plot == "Preschool enrolment (%)"){
+      
+      T <-Tabler()  
+      
+    }
+    
+    T
+    
     })  
   
-  
-  output$TableA <- DT::renderDataTable({
-    TableA()  
-  })  
-  
-  
-  
+ 
   # Downloadable xlsx --
   output$downloadData <- downloadHandler(
     filename = function() {
       paste("Selected YBFS data", ".xlsx")},
-    content = function(file) { write_xlsx(Table(), path = file) }
+    content = function(file) { write_xlsx(Tabler(), path = file) }
         )
+  
+  
   
   output$downloadDataAll <- downloadHandler(
    filename = function() {
