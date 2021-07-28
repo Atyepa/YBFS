@@ -416,3 +416,5 @@ server <- function(input, output) {
 #========================================  
 shinyApp(ui, server)
 #========================================
+# Deployed at: https://atyepa.shinyapps.io/YBFS/
+
