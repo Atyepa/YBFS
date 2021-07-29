@@ -150,7 +150,8 @@ ui <- shinyUI(fluidPage(
            background-color: #EBEEF9;
          } ', 
         
-              
+      
+        
          )
   )),
   
@@ -310,23 +311,25 @@ server <- function(input, output) {
       rename(Percent = Prop) 
   })
   
-  
-  
+    
   Tablec <-  reactive({ data4w %>%
       filter(state %in% S()$State) %>%
       filter(Year %in% Y()$Year) %>%
-      filter(Series %in% D()$Series) %>% 
-      drop_na() %>% 
-      rename(Percent = Prop) 
+      filter(Series %in% D()$Series) %>%
+      select(Year, state, Series, value) %>%
+      rename(State = state) %>%
+      distinct() %>%
+      drop_na()
   })
   
   
   Tabler <-  reactive({ data4w %>%
       filter(state %in% S()$State) %>%
       filter(Year %in% Y()$Year) %>%
-      filter(`Numerator / Denominator` %in% N()$Num_Denom) %>% 
-      drop_na() %>% 
-      rename(Percent = Prop) 
+      filter(`Numerator / Denominator` %in% N()$Num_Denom) %>%
+      rename(Denominator = Series, State = state, `Num. value` = n, `Denom. value` = value, Percent = Prop) %>%
+      select(Year, State, Numerator, `Num. value`, Denominator, `Denom. value`, Percent) %>%
+      drop_na()
   })
   
   
@@ -335,15 +338,13 @@ server <- function(input, output) {
               rename(Percent = Prop) 
   })
   
-  
-  
+    
   Sumtab <- reactive({ data4c %>%
       filter(state %in% S()$State) %>%
       filter(Year %in% Y()$Year)
   })
-  
-  
-  
+ 
+ 
   output$plot <- renderPlotly({
     
     if(input$Plot == "Preschool enrolment (%)"){
@@ -395,23 +396,29 @@ server <- function(input, output) {
     T
     
     })  
-  
- 
+
   # Downloadable xlsx --
+  
+  TableDL <- reactive({
+    if(input$Plot == "Enrolment & population numbers"){
+      Tablec()
+    } else {
+      Tabler()
+    }
+  })
+  
   output$downloadData <- downloadHandler(
     filename = function() {
       paste("Selected YBFS data", ".xlsx")},
-    content = function(file) { write_xlsx(Tabler(), path = file) }
-        )
-  
-    
-  output$downloadDataAll <- downloadHandler(
-   filename = function() {
-   paste("All YBFS data", ".xlsx")},
-   content = function(file) { write_xlsx(TableA(), path = file) }
+    content = function(file) { write_xlsx(TableDL(), path = file) }
   )
  
-  
+  output$downloadDataAll <- downloadHandler(
+  filename = function() {
+  paste("All YBFS data", ".xlsx")},
+  content = function(file) { write_xlsx(TableA(), path = file) }
+    )
+ 
 }
 
 #========================================  
