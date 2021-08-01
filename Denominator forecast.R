@@ -1,19 +1,18 @@
-library(tidyverse)
-library(openxlsx)
-library(writexl)
-library(plotly)
-library(ggthemes)
-library(shiny))
-library(shinyWidgets)
-library(shinythemes)
-library(readsdmx)
-library(DT)
-
-library(yaml)
-library(labeling)   
-library(scales)     
-library(crosstalk)  
-library(farver)     
+withRepo(library(tidyverse))
+withRepo(library(openxlsx))
+withRepo(library(writexl))
+withRepo(library(yaml))
+withRepo(library(plotly))
+withRepo(library(ggthemes))
+withRepo(library(labeling))
+withRepo(library(scales))
+withRepo(library(crosstalk))
+withRepo(library(farver))
+withRepo(library(shiny))
+withRepo(library(shinyWidgets))
+withRepo(library(shinythemes))
+withRepo(library(readsdmx))
+withRepo(library(DT))
 #==============================
 
 # This version of the app to do regression x state + adjust ACT 
@@ -24,8 +23,10 @@ library(farver)
 # + Predicted "1st year of school (lagged 1 yr)"
 
 #--Working directory
-#T <- "// "
-# setwd(T)
+
+T <- "//corp/absdfs/workgroup/AdminData/NCETS/ECEC_Data/2021/Data Request/DESE/YBFS comparison/Reassembled data"
+
+setwd(T)
 
 #---------------------
 #--- Not in operator---
@@ -33,186 +34,158 @@ library(farver)
 
 
 #======================================================
-# Read in data 
+# Read in & wrangle assembled data (from ABS ETS)
 #======================================================
 
-# 1)--- Download Preschool + ERP + YBFS data from GitHub repo---
+# --- Download Preschool + ERP + YBFS data from GitHub repo---
 daturl <- "https://github.com/Atyepa/YBFS/raw/main/Assembled_YBFS_28072021.xlsx"
 download.file(daturl,"Assembled_YBFS_28072021.xlsx", mode = "wb" )
 
-#--- Read in assembled data --
-#data1 <- read.xlsx("Assembled_YBFS_28072021.xlsx")
-data1 <- data1 %>%
+#--- Read in Excel --
+Inp_YBFS_data <- read.xlsx("Assembled_YBFS_28072021.xlsx")
+YBFS_dataw <- Inp_YBFS_data %>%
   select(-1)
 
-# 2) Download ERP, births, migration numbers via SDMX from ABS.Stat
+# Wrangle YBFS_data -pivot states to long, pivot Data_item wide---
+    # Make factors for state, Year as char
+    State_lbl <- c("Aust", "NSW", "Vic", "Qld", "SA", "WA", "Tas", "NT", "ACT")
+    State_lvl <- c("0", "1", "2", "3", "4", "5", "6", "7", "8")
 
-Imig_sdmx <- "https://stat.data.abs.gov.au/restsdmx/sdmx.ashx/GetData/INTERSTATEMIGRATION_CY/1+2+3.3.A04.1+2+3+4+5+6+7+8.A/all?startTime=2012&endTime=2020"
+YBFS_data <- YBFS_dataw %>% 
+  rename(`0` = Aust, `1` = NSW, `2` = Vic, `3` = Qld, `4` = SA, `5` = WA, `6`= Tas, `7` = NT, `8` = ACT) %>%
+  pivot_longer(3:11, names_to = "state", values_to = "value") %>% 
+  mutate(state = factor(state, levels = State_lvl, labels = State_lbl)) %>%
+  mutate(value = as.integer(value), Year = as.character(Year)) %>% 
+  pivot_wider(names_from = Data_item, values_from = value) %>% 
+  select(Year, state, `Preschool (SS YBFS)`, `ERP (4yrs)`, `ERP (4yrs, r)`, `State-specific YBFS`,
+         `1st year of school (lagged 1 yr)`) %>% 
+  rename(First_yr_sch_orig = `1st year of school (lagged 1 yr)`)
+
+# Note have dropped  the non-required measures of preschool & , 
+# renamed 1st year of school (lagged 1 yr) to First_yr_sch_orig
+
+
+#=====================================================================
+# Read in & wrangle ERP and migration numbers via SDMX from ABS.Stat
+#====================================================================
+
+# Download ERP & NOM + internal migration 
+Imig_sdmx <- "https://stat.data.abs.gov.au/restsdmx/sdmx.ashx/GetData/INTERSTATEMIGRATION_CY/3.3.A04+A59.0+1+2+3+4+5+6+7+8.A/all?startTime=2007&endTime=2020"
+NOM_sdmx <- "https://stat.data.abs.gov.au/restsdmx/sdmx.ashx/GetData/NETOVERSEASMIGRATION_CY/3.3.A04+A59.0+1+2+3+4+5+6+7+8.A/all?startTime=2007&endTime=2020"
 ERP_sdmx <-  "https://stat.data.abs.gov.au/restsdmx/sdmx.ashx/GetData/ERP_QUARTERLY/1.0+1+2+3+4+5+6+7+8.3+1+2.0+1+2+3+4+5+6+7+8+9+10+11+12+13+14+15+16+17+18+19+20+21+22+23+24+25+26+27+28+29+30+31+32+33+34+35+36+37+38+39+40+41+42+43+44+45+46+47+48+49+50+51+52+53+54+55+56+57+58+59+60+61+62+63+64+65+66+67+68+69+70+71+72+73+74+75+76+77+78+79+80+81+82+83+84+85+86+87+88+89+90+91+92+93+94+95+96+97+98+99+100.Q/all?startTime=2000-Q1&endTime=2020-Q4"
-births_sdmx <- "https://stat.data.abs.gov.au/restsdmx/sdmx.ashx/GetData/BIRTHS_MONTH_OCCURRENCE/1.1+2+3+4+5+6+7+8+9+10+11+12.0+1+2+3+4+5+6+7+8.A/all?startTime=2000&endTime=2019"
-NOM_sdmx <- "https://stat.data.abs.gov.au/restsdmx/sdmx.ashx/GetData/NETOVERSEASMIGRATION_CY/1+2+3.3.A04.0+1+2+3+4+5+6+7+8.A/all?startTime=2012&endTime=2020"
-
+#births_sdmx <- "https://stat.data.abs.gov.au/restsdmx/sdmx.ashx/GetData/BIRTHS_MONTH_OCCURRENCE/1.1+2+3+4+5+6+7+8+9+10+11+12.0+1+2+3+4+5+6+7+8.A/all?startTime=2000&endTime=2019"
 
 download.file(ERP_sdmx,'erp.xml')
-download.file(births_sdmx,'births.xml')
 download.file(Imig_sdmx,'Imig.xml')
 download.file(NOM_sdmx,'NOM.xml')
+# download.file(births_sdmx,'births.xml')
 
-
-#---Read in Births, ERP & Migration data---
+#---Read in ERP & Migration data---
 ERP <- read_sdmx('erp.xml')
-Births <- read_sdmx('births.xml')
 Imig <- read_sdmx('Imig.xml')
 NOM <- read_sdmx('NOM.xml')
+#Births <- read_sdmx('births.xml')
 #-----------------------------------------
 
-#--Join & tidy migration
 
-Imig <- Imig %>% 
-  rename(state_code  = ASGS_2011, Imig = ObsValue, Year = Time) %>% 
-  mutate(Age = "0-4") %>% 
+#--Join & tidy  internal + NOM migration
+
+Imig04_59 <- Imig %>% 
+  rename(state_code  = ASGS_2011, Year = Time) %>% 
+  mutate(Age_grp = case_when(AGE == "A04" ~ "0-4", 
+                         AGE == "A59" ~ "5-9"), 
+         Imig = as.numeric(ObsValue)) %>% 
   filter(MEASURE == 3) %>% 
-  select(Year, Age, state_code, Imig)
+  select(Year, Age_grp, state_code, Imig) 
   
-NOM <- NOM %>% 
-  rename(state_code  = ASGS_2011, NOM = ObsValue, Year = Time) %>% 
-  mutate(Age = "0-4") %>% 
-  filter(MEASURE == 3) %>% 
-  select(Year, Age, state_code, NOM)
 
-Mig <- NOM %>% 
-  left_join(Imig, by = c("Age", "state_code", "Year")) %>% 
-  select(-Age)
+NOM04_59 <- NOM %>% 
+  rename(state_code  = ASGS_2011, Year = Time) %>% 
+  mutate(Age_grp = case_when(AGE == "A04" ~ "0-4", 
+                         AGE == "A59" ~ "5-9"), 
+                         NOM = as.numeric(ObsValue)) %>% 
+                                filter(MEASURE == 3) %>% 
+                                select(Year, Age_grp, state_code, NOM)
 
-Mig <- replace_na(Mig, list(Imig = 0))
 
-Mig_erp <- ERP %>% 
-  mutate(Age = as.numeric(AGE), erp = as.numeric(ObsValue), Q = substr(Time, 6,7), Year = substr(Time, 1,4)) %>% 
-  filter(Age <=4, SEX_ABS == 3) %>% 
+Mig04_59 <- NOM04_59 %>% 
+  left_join(Imig04_59, by = c("Age_grp", "state_code", "Year")) 
+
+
+# Impute 0 for Aust Imig.  Sum NOM + Imig for NetMIG
+Mig04_59 <- Mig04_59 %>% 
+  replace_na(list(Imig = 0)) %>% 
+  mutate(NetMig_grp = NOM + Imig) 
+
+#--- Tidy ERP.  Subset to June, psn, 0-4yrs  & 5-9
+ERP04_59 <- ERP %>% 
+  mutate(Age = as.numeric(AGE), ERP_sya = as.numeric(ObsValue),   # <- sya ~ "single year of age"
+         Q = substr(Time, 6,7), Year = substr(Time, 1,4)) %>% 
+  filter(Age <=9, SEX_ABS == 3) %>% 
+   mutate(Age_grp = case_when(Age %in% c(0:4) ~ "0-4", 
+                              Age %in% c(5:9) ~ "5-9"),
+          yr = as.numeric(Year)) %>% 
   rename(state_code  = STATE) %>% 
-  filter(Q == "Q2") %>% 
-  select(Year, Age, state_code, erp)
+  filter(Q == "Q2", yr > 2006) %>% 
+  select(Year, state_code, Age, Age_grp, ERP_sya)
   
-#  Calc fractions from  4 yr olds from 0-4 --
-Mig_erp2 <- Mig_erp %>% 
-  group_by(state_code, Year) %>% 
-  mutate("Tot" = sum(erp)) %>% 
-  mutate(p = round(erp/Tot,3)) %>% 
-  filter(Age == 4, Year > 2011)
-  
-# Join  p from Mig_erp2 to Mig
-Mig_erp3 <- Mig %>% 
-  left_join(Mig_erp2, by = c("Year", "state_code")) %>% 
-  select(-7)
-
-# Apply fraction to 0-4 mig totals
-Mig_erp4 <- Mig_erp3 %>% 
-  mutate(NOM = NOM * p, Imig = Imig * p)
-
-
-filter(Age == 4, Year >2011) %>% 
-  select(Year, Age, state_code, ERP)
-
-# Join  ERP to mig 
-Mig_data <- Mig %>% 
-  left_join(Mig_erp, by = c("state_code", "Year") )
+#  Calculate ERP fractions of single year (0,1,2..9yr olds) within the five-year age groups 
+fraction04_59 <- ERP04_59 %>% 
+  group_by(state_code, Age_grp, Year) %>% 
+  mutate(ERP_grp = sum(ERP_sya), Mig_year = Year) %>% 
+  mutate(p = round(ERP_sya/ERP_grp,4)) 
   
 
+# Use the fraction as a spine for joining Mig (fractions will split Migration)  --
+MigFr <- fraction04_59 %>% 
+  left_join(Mig04_59, by = c("Year", "state_code", "Age_grp")) %>% 
+   mutate(NetMig_sya = round(NetMig_grp * p,0)) %>% 
+   select(Year, state_code, Age, Age_grp, NetMig_sya, NetMig_grp, ERP_sya, ERP_grp, p) %>% 
+  ungroup()
 
-
-#---Tidy long---
-DI_lvl <- c("ERP (4yrs)", "State-specific YBFS", "1st year of school (lagged 1 yr)","Preschool (SS YBFS)")
-
-State_lbl <- c("Aust", "NSW", "Vic", "Qld", "SA", "WA", "Tas", "NT", "ACT")
-State_lvl <- c("0", "1", "2", "3", "4", "5", "6", "7", "8")
-
-data2 <- data1 %>%
-  rename(`0` = Aust, `1` = NSW, `2` = Vic, `3` = Qld, `4` = SA, `5` = WA, `6`= Tas, `7` = NT, `8` = ACT) %>%
-  pivot_longer(3:11, names_to = "state", values_to = "value")%>%
-  mutate(state = factor(state, levels = State_lvl, labels = State_lbl)) %>%
-  rename(Series = Data_item) %>%
-  filter(Series %in% DI_lvl) %>% 
-  mutate(Series = factor(Series, levels = DI_lvl)) %>%
-  mutate(value = round(value,0))
-
-
-#---Adjust for state of child at school---
-
-#---Read in state of student adjustment for 1st yr school--
-adj_schl <- read.xlsx("first_yr_sch_adj.xlsx.")
-
-# prep for join
-adj_schl <- adj_schl %>% 
-  select(-state) %>% 
+# Make state a factor & a numeric Year (+1) 
+MigFr5 <- MigFr %>% 
   mutate(state = factor(state_code, levels = State_lvl, labels = State_lbl)) %>% 
-  select(-state_code) 
+  mutate(Year_next = as.character(as.integer(Year)+1)) %>% 
+  filter(Age == 5) %>% 
+  select(Year_next, state, NetMig_sya) %>% 
+  rename(NetMig = NetMig_sya)
   
 
-# Subset to "1st year of school (lagged 1 yr)" then join adj_schl 
-school0 <- data2 %>% 
-  filter(Series == "1st year of school (lagged 1 yr)") %>% 
-  left_join(adj_schl, by = c("state", "Year")) %>% 
-  rename(valueO = value)
+# MigFr5 is being used to gives us NetMig, but advanced by 1yr (i.e. yearn - which will join on )
+YBFS_mig <- YBFS_data %>% 
+    left_join(MigFr5, by = c("Year" = "Year_next", "state"))
+
+
+# Adjust for the migration (NetMig)
+YBFS_data2  <- YBFS_mig %>% 
+  mutate(First_yr_sch_revised = First_yr_sch_orig - NetMig) %>% 
+  select(-NetMig) %>% 
+  mutate(Numerator = `Preschool (SS YBFS)`) %>% 
+  pivot_longer(3:8, names_to = "Series", values_to = "value") %>% 
+  mutate(Percent = round(Numerator/value*100,1), 
+         Year = factor(Year)) %>% 
+  mutate(`Numerator / Denominator` = paste0("Preschool (SS YBFS) / ",Series))
   
-school0 <- replace_na(school0, list(child_oth_state = 0))
-
-school0 <- school0 %>% 
-  mutate(value = valueO - child_oth_state) %>% 
-  select(-valueO, -child_oth_state)
-
-# replace 1st year of school (lagged 1 yr) with school0
-data2 <- data2 %>% 
-  filter(Series != "1st year of school (lagged 1 yr)") %>% 
-  bind_rows(school0)
-
-# data 2 is now adjusted
-
-#---subset SS preschool for Left-joining as numerator ---
-prescSS <- data2 %>%
-  filter(Series == "Preschool (SS YBFS)") %>%
-  mutate(Numerator = "Preschool (SS YBFS)" ) %>% 
-  rename(`Preschool (SS YBFS)` = value) %>%
-  select(-2)
 
 
-# Left Join preschool numerators then stack
-presc <- prescSS %>%
-    rename(n = `Preschool (SS YBFS)`) %>% 
-    mutate(Numerator= "Preschool (SS YBFS)") %>% 
-  select(Year, state, Numerator, n)
 
-# Join to num to denom, calc %
-data4 <- data2 %>%
-  left_join(presc, by = c("Year", "state")) %>%
-  mutate(Prop = round(n/value*100,1))
-
-# Make a Numerator-Denominator combination variable
-data4 <- data4 %>%
-  mutate(`Numerator / Denominator` = paste0(Numerator," / ",Series)) %>% 
-  mutate(Year = factor(Year))
-
-tempw <- data4 %>% 
-  select(-5:-8) %>% 
-  pivot_wider(names_from = "Series", values_from = "value") %>% 
-  arrange(state) 
-
-DI_lvl <- c("ERP (4yrs)", "State-specific YBFS", "1st year of school (lagged 1 yr)","Preschool (SS YBFS)")
 #*********************************
 #  UI prep
 #*********************************
-data4w <- data4
+YBFS_data2w <- YBFS_data2
 #----------------------------------------------------
 #  list for selecting state, year, series, Num_Denom
 #----------------------------------------------------
 
-State <- data4 %>%
+State <- YBFS_data2 %>%
   mutate(State = as.character(state)) %>%
   select(State) %>%
   distinct()
 
 State <- as.list(State$State)
 
-Year <- data4 %>%
+Year <- YBFS_data2 %>%
   mutate(Year = as.character(Year)) %>%
   select(Year) %>%
   distinct()
@@ -220,28 +193,17 @@ Year <- data4 %>%
 Year <- as.list(Year$Year)
 
 
-Series <- data4 %>%
+Series <- YBFS_data2 %>%
   select(Series) %>%
   mutate(Series = as.character(Series)) %>%
   distinct()
 
 Series <-as.list(Series$Series)
 
-
-Num_Denom_ <- data4 %>%
+#@#@## `Numerator / Denominator` is a Feature 
+Num_Denom_ <- YBFS_data2 %>% 
   select(`Numerator / Denominator`) %>%
-  distinct() %>%
-  filter(`Numerator / Denominator` %in% c("Preschool (SS YBFS) / ERP (4yrs)",
-                                          "Preschool (SS YBFS) / ERP (4yrs, r)",
-                                          "Preschool (SS YBFS) / 1st year of school (lagged 1 yr)",
-                                          "Preschool (SS YBFS) / State-specific YBFS",
-                                          "Preschool (4-5 yrs) / ERP (4yrs)",
-                                          "Preschool (4-5 yrs) / 1st year of school (lagged 1 yr)",
-                                          "Preschool (4-5 yrs) / State-specific YBFS",
-                                          "Preschool (original YBFS) / ERP (4yrs)",
-                                          "Preschool (original YBFS) / 1st year of school (lagged 1 yr)",
-                                          "Preschool (original YBFS) / State-specific YBFS"))
-
+  distinct()
 Num_Denom <- as.list(Num_Denom_$`Numerator / Denominator`)
 
 
@@ -251,7 +213,7 @@ Num_Denom <- as.list(Num_Denom_$`Numerator / Denominator`)
 
 ui <- shinyUI(fluidPage(
   
-
+  
   tags$style(type="text/css",
              ".shiny-output-error { visibility: hidden; }",
              ".shiny-output-error:before { visibility: hidden; }",
@@ -267,8 +229,9 @@ ui <- shinyUI(fluidPage(
                 
                 conditionalPanel("input.Plot == `Enrolment & population numbers`",
                                  checkboxGroupInput('Series', 'Compare measures of preschool enrolment and population denominators:',
-                                                    choices = c("Preschool (SS YBFS)", "Preschool (4-5 yrs)", "Preschool (original YBFS)",
-                                                                "ERP (4yrs)", "ERP (4yrs, r)", "1st year of school (lagged 1 yr)", "State-specific YBFS"),
+                                                    choices = c("Preschool (SS YBFS)", 
+                                                                "ERP (4yrs)", "ERP (4yrs, r)", "State-specific YBFS", 
+                                                                "First_yr_sch_orig", "First_yr_sch_revised"),
                                                     selected = c("ERP (4yrs)", "1st year of school (lagged 1 yr)"))
                                  
                 ),
@@ -278,19 +241,12 @@ ui <- shinyUI(fluidPage(
                                  
                                  checkboxGroupInput('Num_Denom', 'Compare proportions from different Numerator / denominator combinations:',
                                                     choices = c(
-                                                      "Preschool (4-5 yrs) / ERP (4yrs) - Current UANP measure" = "Preschool (4-5 yrs) / ERP (4yrs)",
-                                                      "Preschool (4-5 yrs) / ERP (4yrs, r)",
-                                                      "Preschool (4-5 yrs) / 1st year of school (lagged 1 yr)",
-                                                      "Preschool (4-5 yrs) / State-specific YBFS",
+                                                      "Preschool (SS YBFS) / ERP (4yrs)",              
+                                                      "Preschool (SS YBFS) / ERP (4yrs, r)",           
+                                                      "Preschool (SS YBFS) / State-specific YBFS",     
+                                                      "Preschool (SS YBFS) / First_yr_sch_orig",       
+                                                      "Preschool (SS YBFS) / First_yr_sch_revised"),     
                                                       
-                                                      "Preschool (SS YBFS) / ERP (4yrs)",
-                                                      "Preschool (SS YBFS) / 1st year of school (lagged 1 yr)",
-                                                      "Preschool (SS YBFS) / State-specific YBFS",
-                                                      
-                                                      "Preschool (original YBFS) / ERP (4yrs)",
-                                                      "Preschool (original YBFS) / 1st year of school (lagged 1 yr)",
-                                                      "Preschool (original YBFS) / State-specific YBFS"),
-                                                    
                                                     selected = c("Preschool (4-5 yrs) / ERP (4yrs)", "Preschool (SS YBFS) / ERP (4yrs)"))
                 ),
                 
@@ -392,24 +348,22 @@ server <- function(input, output) {
   })
   
   
-  data4c <- reactive({ data4 %>%
+  YBFS_data2c <- reactive({ YBFS_data2 %>%
       filter(state %in% S()$State) %>%
       filter(Year %in% Y()$Year) %>%
-      filter(Series %in% D()$Series) %>% 
-      rename(Percent = Prop) 
+      filter(Series %in% D()$Series)
   })
   
   
-  data4r <- reactive({ data4 %>%
+  YBFS_data2r <- reactive({ YBFS_data2 %>%
       filter(state %in% S()$State) %>%
       filter(Year %in% Y()$Year) %>%
-      filter(`Numerator / Denominator` %in% N()$Num_Denom) %>% 
-      rename(Percent = Prop) 
+      filter(`Numerator / Denominator` %in% N()$Num_Denom)
   })
   
   
   
-  Tablec <-  reactive({ data4w %>%
+  Tablec <-  reactive({ YBFS_data2w %>%
       filter(state %in% S()$State) %>%
       filter(Year %in% Y()$Year) %>%
       filter(Series %in% D()$Series) %>% 
@@ -420,24 +374,23 @@ server <- function(input, output) {
   })
   
   
-  Tabler <-  reactive({ data4w %>%
+  Tabler <-  reactive({ YBFS_data2w %>%
       filter(state %in% S()$State) %>%
       filter(Year %in% Y()$Year) %>%
       filter(`Numerator / Denominator` %in% N()$Num_Denom) %>% 
-      rename(Denominator = Series, State = state, `Num. value` = n, `Denom. value` = value, Percent = Prop) %>% 
+      rename(Denominator = Series, State = state, `Num. value` = n, `Denom. value` = value) %>% 
       select(Year, State, Numerator, `Num. value`, Denominator, `Denom. value`, Percent) %>% 
       drop_na() 
   })
   
   
-  TableA <-  reactive({ data4w %>%
-      drop_na() %>% 
-      rename(Percent = Prop) 
+  TableA <-  reactive({ YBFS_data2w %>%
+      drop_na() 
   })
   
   
   
-  Sumtab <- reactive({ data4c %>%
+  Sumtab <- reactive({ YBFS_data2c %>%
       filter(state %in% S()$State) %>%
       filter(Year %in% Y()$Year)
   })
@@ -447,7 +400,7 @@ server <- function(input, output) {
   output$plot <- renderPlotly({
     
     if(input$Plot == "Preschool enrolment (%)"){
-      p <- ggplot(data4r(), aes(x= Year, y= Percent, 
+      p <- ggplot(YBFS_data2r(), aes(x= Year, y= Percent, 
                                 colour = `Numerator / Denominator`, 
                                 group = `Numerator / Denominator`)) +
         geom_line(size = .8)+
@@ -462,7 +415,7 @@ server <- function(input, output) {
     }
     
     if(input$Plot == "Enrolment & population numbers"){
-      p <- ggplot(data4c(), aes(x= Year, y = value, colour = Series, group = Series)) +
+      p <- ggplot(YBFS_data2c(), aes(x= Year, y = value, colour = Series, group = Series)) +
         geom_line(size = .8)+
         geom_point(size = 2) +
         scale_y_continuous(labels = comma)+
@@ -499,14 +452,14 @@ server <- function(input, output) {
   
   # Downloadable xlsx --
   
-TableDL <- reactive({
-  if(input$Plot == "Enrolment & population numbers"){
-    Tablec()
-  } else {
-    Tabler()
-  }
-    })
-
+  TableDL <- reactive({
+    if(input$Plot == "Enrolment & population numbers"){
+      Tablec()
+    } else {
+      Tabler()
+    }
+  })
+  
   output$downloadData <- downloadHandler(
     filename = function() {
       paste("Selected YBFS data", ".xlsx")},
@@ -527,3 +480,86 @@ TableDL <- reactive({
 shinyApp(ui, server)
 #========================================
 
+
+
+
+
+
+#@##====================================================================
+#@##====================================================================
+#@##====================================================================
+#@##====================================================================
+
+
+#---Adjust for state of child at school---
+
+#---Read in state of student adjustment for 1st yr school--
+adj_schl <- read.xlsx("first_yr_sch_adj.xlsx.")
+
+# prep for join
+adj_schl <- adj_schl %>% 
+  select(-state) %>% 
+  mutate(state = factor(state_code, levels = State_lvl, labels = State_lbl)) %>% 
+  select(-state_code) 
+  
+
+# Subset to "1st year of school (lagged 1 yr)" then join adj_schl 
+school0 <- data2 %>% 
+  filter(Series == "1st year of school (lagged 1 yr)") %>% 
+  left_join(adj_schl, by = c("state", "Year")) %>% 
+  rename(valueO = value)
+  
+school0 <- replace_na(school0, list(child_oth_state = 0))
+
+school0 <- school0 %>% 
+  mutate(value = valueO - child_oth_state) %>% 
+  select(-valueO, -child_oth_state)
+
+# replace 1st year of school (lagged 1 yr) with school0
+data2 <- data2 %>% 
+  filter(Series != "1st year of school (lagged 1 yr)") %>% 
+  bind_rows(school0)
+
+# data 2 is now adjusted
+
+#---subset SS preschool for Left-joining as numerator ---
+prescSS <- data2 %>%
+  filter(Series == "Preschool (SS YBFS)") %>%
+  mutate(Numerator = "Preschool (SS YBFS)" ) %>% 
+  rename(`Preschool (SS YBFS)` = value) %>%
+  select(-2)
+
+
+# Left Join preschool numerators then stack
+presc <- prescSS %>%
+    rename(n = `Preschool (SS YBFS)`) %>% 
+    mutate(Numerator= "Preschool (SS YBFS)") %>% 
+  select(Year, state, Numerator, n)
+
+# Join to num to denom, calc %
+YBFS_data2 <- data2 %>%
+  left_join(presc, by = c("Year", "state")) %>%
+  mutate(Prop = round(n/value*100,1))
+
+# Make a Numerator-Denominator combination variable
+YBFS_data2 <- YBFS_data2 %>%
+  mutate(`Numerator / Denominator` = paste0(Numerator," / ",Series)) %>% 
+  mutate(Year = factor(Year))
+
+tempw <- YBFS_data2 %>% 
+  select(-5:-8) %>% 
+  pivot_wider(names_from = "Series", values_from = "value") %>% 
+  arrange(state) 
+
+withRepo(library(caret))
+
+NSW <-  tempw %>% 
+  filter(state == "NSW", Year %!in% c(2012:2015), Year != 2020)
+
+mod_fit1 <- train(`1st year of school (lagged 1 yr)` ~ `ERP (4yrs)` + `Preschool (SS YBFS)` + `State-specific YBFS`,
+                  data = NSW,
+                  trControl = trainControl(method = "cv", number = 5),
+                  method = "glm")
+
+
+DI_lvl <- c("ERP (4yrs)", "State-specific YBFS", "1st year of school (lagged 1 yr)","Preschool (SS YBFS)")
