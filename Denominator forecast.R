@@ -24,7 +24,7 @@ withRepo(library(DT))
 
 #--Working directory
 
-T <- "//corp/absdfs/workgroup/AdminData/NCETS/ECEC_Data/2021/Data Request/DESE/YBFS comparison/Reassembled data"
+T <- "//...Reassembled data"
 
 setwd(T)
 
