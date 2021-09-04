@@ -1,0 +1,838 @@
+#-- This app is primarily for visualising denominators representing Year Before First Year of School (YBFS)
+#-- Includes linear models by state for YBFS based on ERP of 4 yr and 5 yr
+# Deployed at: https://atyepa.shinyapps.io/YBFS_lm/
+
+library(tidyverse)
+library(lubridate)
+library(openxlsx)
+library(writexl)
+library(plotly)
+library(ggthemes)
+library(labeling)
+library(scales)
+library(crosstalk)
+library(farver)
+library(shiny)
+library(shinyWidgets)
+library(shinythemes)
+library(readsdmx)
+library(zoo)
+library(data.table)
+library(broom)
+
+options(scipen=999)
+#==============================
+
+#--- Read in YBFS_data3w.xlsx---
+
+YBFS_03w <- read.xlsx("https://github.com/Atyepa/YBFS/raw/main/YBFS_03w2.xlsx")
+
+#--- Fix colnames (Excel adds .)---
+colnames(YBFS_03w)
+
+YBFS_04w <- YBFS_03w %>%
+  rename(`Preschool (SS YBFS)` = `Preschool.(SS.YBFS)`,
+         `Preschool (4-5 yrs)` = `Preschool.(4-5.yrs)`,
+         `State-specific YBFS` = `State-specific.YBFS`,
+         New_YBFS = First_yr_sch_adj,
+         `ERP (4yrs)` = `ERP.(4yrs)`, `ERP (4yrs, r)` = `ERP.(4yrs,.r)`)
+
+
+#---Fix factors---
+# state
+State_lbl <- c("NSW", "Vic", "Qld", "SA", "WA", "Tas", "NT", "ACT", "Aust")
+State_lvl <- c("1", "2", "3", "4", "5", "6", "7", "8", "9")
+
+YBFS_05w <- YBFS_04w %>%
+  mutate(state = case_when(state == "NSW" ~ "1",
+                           state == "Vic" ~ "2",
+                           state == "Qld" ~ "3",
+                           state == "SA" ~ "4",
+                           state == "WA" ~ "5",
+                           state == "Tas" ~ "6",
+                           state == "NT" ~ "7",
+                           state == "ACT" ~ "8", 
+                           state == "Aust" ~ "9")) %>%
+  mutate(state = factor(state, levels = State_lvl, labels = State_lbl))
+
+
+#=========================================================
+# Visualisation
+#=========================================================
+
+#--- Transpose long for ease of plotting multiple series
+YBFS_05L <- YBFS_05w %>%
+  mutate(ERP4yr = ERP_4yr) %>%
+  select(Year, Cohort_4yrs, state, Assumption, Numerator, Numerator45, ERP4yr, everything(), -`ERP (4yrs, r)`) %>%
+  pivot_longer(8:16, names_to = "Series", values_to = "value")
+
+#------------------------------------------------------
+
+#-------------------------------------------------------------------
+#  Can we amend (or ignore) the ouliers?
+#  For Qld: drop the years prior to 2016 + smooth 2018 (with moving avg)
+#  For SA: apply the 3 term moving avg over available years (and drop 2018 & 2019)
+#-------------------------------------------------------------------
+
+YBFS_06w <- YBFS_05w %>%
+  mutate(yr = as.numeric(Year)) %>%
+  mutate(`New YBFS (adj)` = `New_YBFS`) %>%
+  mutate(`New YBFS (adj)` = replace(`New YBFS (adj)`, state == "Qld" & yr <2016, NA)) %>%
+  group_by(state) %>%
+  mutate(adj = rollmean(`New YBFS (adj)`, k = 3, align = "center", na.pad=TRUE)) %>%
+  ungroup() %>%
+  mutate(`New YBFS (adj)` = case_when(state == "Qld" & Year == "2018" ~ round(adj,0), TRUE ~ round(`New YBFS (adj)`,0)))%>%
+  mutate(`New YBFS (adj)` = case_when(state == "SA" ~ round(adj,0), TRUE ~ round(`New YBFS (adj)`,0)))%>%
+  mutate(`New YBFS (adj)` = replace(`New YBFS (adj)`, state == "SA" & Year == "2018", NA)) %>%
+  select(yr, everything(),-adj)
+
+
+# Updated correlation for ERP_4yr
+corr2<- YBFS_06w %>%
+  mutate(yr = as.numeric(as.character(Year))) %>%
+  filter(yr >2012, yr < 2020) %>%
+  select(ERP_4yr, `New YBFS (adj)`, state) %>%
+  drop_na() %>%
+  group_by(state) %>%
+  summarize(COR=cor(ERP_4yr, `New YBFS (adj)`))
+
+corr2
+
+#--------------------------------------------------------------------
+# Fit lm for: `New YBFS (adj)`
+# by state using 2 lm models 
+# 1) ERP_4yr
+# 2) ERP_4yr + ERP_5yr
+# Larger states appear to have better fit better with just ERP_4yr
+# Smaller states may do better to have both ERP_4yr + ERP_5yr
+#--------------------------------------------------------------------
+
+nested <- YBFS_06w %>%
+  nest(data = -state)
+
+# categorise states into 2 groups:
+s1 <- c("Aust", "NSW", "Vic", "Qld", "WA")
+s2 <- c("SA", "Tas", "NT", "ACT")
+
+# nest() by-groups
+state_mod45 <- YBFS_06w %>%
+  nest(data = -state) %>%
+  mutate(
+    fit = map(data, ~ lm(`New YBFS (adj)` ~ ERP_4yr + ERP_5yr, data = .x)),
+    tidied = map(fit, tidy),
+    glanced = map(fit, glance),
+    augmented = map(fit, augment, newdata = YBFS_06w, se_fit=TRUE, interval = "prediction")) %>% 
+    rename(state_ = state) 
+
+state_mod4 <- YBFS_06w %>%
+  nest(data = -state) %>%
+  mutate(
+    fit = map(data, ~ lm(`New YBFS (adj)` ~ ERP_4yr, data = .x)),
+    tidied = map(fit, tidy),
+    glanced = map(fit, glance),
+    augmented = map(fit, augment, newdata = YBFS_06w, se_fit=TRUE, interval = "prediction")) %>% 
+  rename(state_ = state) 
+
+# Rounding functions 
+rnd3 <- function(x) round(x,3)
+rnd1 <- function(x) round(x,1)
+
+
+# Coeff
+state_coeff4 <- state_mod4 %>% 
+  unnest(tidied) %>% 
+  rename(state = state_) %>% 
+  select(1,4:8) %>% 
+  filter(state %in% s1)
+  
+state_coeff45 <- state_mod45 %>% 
+  unnest(tidied) %>% 
+  rename(state = state_) %>% 
+  select(1,4:8) %>% 
+  filter(state %in% s2)
+
+state_coeff <- state_coeff4 %>% 
+  bind_rows(state_coeff45) %>% 
+  mutate_if(is.numeric, rnd3 ) %>% 
+  mutate_at(c("estimate", "std.error", "statistic"), rnd1) %>% 
+  arrange(state) %>% 
+  filter(term != "(Intercept)")
+
+# Summary
+state_summ4 <- state_mod4 %>% 
+  unnest(glanced) %>% 
+  rename(state = state_) %>% 
+  select(1,5:16) %>% 
+  filter(state %in% s1)
+
+state_summ45 <- state_mod45 %>% 
+  unnest(glanced) %>% 
+  rename(state = state_) %>% 
+  select(1,5:16) %>% 
+  filter(state %in% s2)
+
+state_summ <- state_summ4 %>% 
+  bind_rows(state_summ45)
+
+
+state_summ <- state_summ %>% 
+  mutate_if(is.numeric, rnd3 ) %>% 
+  mutate_at(c("sigma", "statistic", "logLik", "AIC", "BIC", "deviance"), rnd1) %>% 
+  arrange(state)
+
+
+# Prediction 
+state_fit4 <- state_mod4 %>% 
+  unnest(augmented) %>% 
+  filter(state_ == state) %>% 
+  select(-1:-5) %>% 
+  mutate(lower = .fitted - .se.fit, 
+         upper = .fitted + .se.fit,
+         RSE = round((upper - lower) /.fitted*100,1)) %>% 
+            filter(state %in% s1)
+
+state_fit45 <- state_mod45 %>% 
+  unnest(augmented) %>% 
+  filter(state_ == state) %>% 
+  select(-1:-5) %>% 
+  mutate(lower = .fitted - .se.fit, 
+         upper = .fitted + .se.fit,
+         RSE = round((upper - lower) /.fitted*100,1)) %>% 
+              filter(state %in% s2)
+
+state_fit <- state_fit4 %>% 
+  bind_rows(state_fit45) %>% 
+  arrange(state)
+
+YBFS_07w <- state_fit %>%
+  rename(`First year school (lagged)` = First_yr_sch) %>% 
+  mutate(`New YBFS (fitted)` = round(.fitted,1),
+         upper = round(upper,0),
+         lower = round(lower,0),
+         CI = round(.se.fit,0)) %>% 
+        select(-`.se.fit`, -`.fitted`)
+
+# Select columns for the 'Fitted' display/download table in the app
+YBFS_07w2 <- YBFS_07w %>% 
+  select(2,4:8, 16, 18, 25,26) %>% 
+  mutate(`New YBFS (fitted)` = round(`New YBFS (fitted)`,0)) %>% 
+  rename(`ERP 3yr` = ERP_3yr, `ERP 4yr` = ERP_4yr, `ERP 5yr` = ERP_5yr)
+         
+
+
+YBFS_07L1 <- YBFS_07w %>%
+  rename(`ERP (4yrs p)` = `ERP (4yrs)`) %>%
+  mutate(`New_YBFS_(adj)` = `New YBFS (adj)`, ERP4yr = ERP_4yr, Date = make_date(Year, 6, 30), Year = as.character(yr) ) %>%
+  select(Year, yr, Date, state, Assumption, Numerator, Numerator45, `New YBFS (adj)`, `New YBFS (fitted)`, everything(), lower, upper,
+         CI, -.resid, -RSE, -Cohort_4yrs, -`ERP (4yrs, r)`, -New_YBFS) %>%
+            pivot_longer(8:17, names_to = "Series", values_to = "value") %>%
+                mutate(value = round(value,0)) %>%
+                rename(`New YBFS (adj)` = `New_YBFS_(adj)`, ERP_4yr = ERP4yr)
+
+# Make `Numerator / Denominator` + rename `New YBFS (adj)` to `New YBFS (actual)`
+# to better distinguish from `New YBFS (fitted)`
+YBFS_07L2 <- YBFS_07L1 %>%
+  rename(`New YBFS (actual)` = `New YBFS (adj)`) %>%
+  mutate(Series = case_when(Series == "New YBFS (adj)" ~ "New YBFS (actual)", TRUE ~ Series)) %>%
+  mutate(`Numerator / Denominator` = paste0("Preschool (SS YBFS) / ", Series)) %>%
+  mutate(Percent = round(Numerator/value*100,1)) %>%
+  mutate(`Numerator / Denominator45` = paste0("Preschool (4-5 yrs) / ", Series)) %>%
+  mutate(Percent45 = round(Numerator45/value*100,1)) 
+  
+YBFS_07La <-  YBFS_07L2 %>% 
+  select(1:5, 8:18)
+
+YBFS_07L <- YBFS_07L2 %>% 
+  select(1:5, 8:16, 19,20) %>% 
+  rename(`Numerator / Denominator` = `Numerator / Denominator45`, Percent = Percent45) %>% 
+  bind_rows(YBFS_07La) %>% 
+  arrange(state)
+
+
+#*********************************************************************
+# Make a Table for YBFS 2020 - 2025 for States fitted zero, medium high 
+#*********************************************************************
+YBFS_sw <- YBFS_07L %>% 
+  filter(Series == "New YBFS (fitted)", yr > 2020) %>% 
+  select(1,4,5,8,9,12, 14) %>% 
+  rename(YBFS_fitted = value) %>% 
+  distinct()
+
+YBFS_sw2 <- YBFS_sw %>% 
+      pivot_wider(names_from = Assumption, values_from = c(ERP_4yr, YBFS_fitted, lower, upper)) 
+
+nnames <- c("Year", "State", 
+            "ERP 4yrs (zero)", "ERP 4yrs (med)", "ERP 4yrs (high)",
+            "YBFS (zero)", "YBFS (med)", "YBFS (high)",
+            "YBFS (zero, lower CI)", "YBFS (med, lower CI)", "YBFS (high, lower CI)",
+            "YBFS (zero, upper CI)", "YBFS (med, upper CI)", "YBFS (high, upper CI)")
+
+colnames(YBFS_sw2) <- nnames 
+
+YBFS_ranges <- YBFS_sw2 %>% 
+  select(1:5,6,9,12,7,10,13, 8, 11, 14 )
+
+
+#*********************************
+#  UI prep for Shiny
+#*********************************
+
+#---------------------------------------------------------------
+#  Make list objects for 'state', 'Year', 'series', 'Num_Denom'
+#---------------------------------------------------------------
+
+State <- YBFS_07L %>%
+  mutate(State = as.character(state)) %>%
+  select(State) %>%
+  distinct()
+
+State <- as.list(State$State)
+
+Year. <- YBFS_07L %>%
+  select(Year) %>%
+  distinct()
+
+Year <- as.list(Year.$Year)
+
+
+Series. <- YBFS_07L %>%
+  select(Series) %>%
+  mutate(Series = as.character(Series)) %>%
+  distinct()
+
+Series <-as.list(Series.$Series)
+
+Num_Denom. <- YBFS_07L %>%
+  select(`Numerator / Denominator`) %>%
+  distinct()
+Num_Denom <- as.list(Num_Denom.$`Numerator / Denominator`)
+
+# Colour scale
+
+abscol <- c("#336699", "#669966", "#7ad2f6", "#993366", "#CC9966", "#99CC66", "#666666", "#FF9900", "#0099C6", "#EA4C46")
+
+#==================
+# UI
+#==================
+
+ui <- shinyUI(fluidPage(
+  
+  tags$style(type="text/css",
+             ".shiny-output-error { visibility: hidden; }",
+             ".shiny-output-error:before { visibility: hidden; }",
+  ),
+  
+  headerPanel("Proposed YBFS measure - exploration of preliminary results"),
+  
+  
+  sidebarPanel( id="sidebar",
+                
+                radioButtons('Plot', 'Select plot axis:', choices = c( "Series x year", "Preschool enrolment (%) x year", 
+                                    "Linear relationship of new YBFS x ERP"),
+                             selected = "Series x year"),
+                
+                conditionalPanel("input.Plot == `Series x year`",
+                                 
+                                 checkboxGroupInput('Series', 'Compare measures of preschool enrolment and population denominators:',
+                                                    choices = c(
+                                                      "Preschool (SS YBFS)",
+                                                      "Preschool (4-5 yrs)", 
+                                                      "First year school (lagged)", 
+                                                      "New YBFS (actual)",
+                                                      "New YBFS (fitted)",
+                                                      "ERP_3yr",
+                                                      "ERP_4yr",
+                                                      "ERP_5yr",
+                                                      "ERP (4yrs p)",
+                                                      "State-specific YBFS"),
+                                                      
+                                                    selected = c("First year school (lagged)", "ERP_4yr")),
+                                 
+                                 radioButtons('CI', 'Show CI on modelled YBFS:', 
+                                               choices = c("On", "Off"), 
+                                              selected = "Off",  inline = TRUE)),
+                
+                conditionalPanel("input.Plot == `Linear relationship of new YBFS x ERP`",
+                                 
+                                 pickerInput('Seriesx', 'Select covariate of new YBFS:',
+                                             choices = c("Preschool (SS YBFS)",
+                                                         "State-specific YBFS",
+                                                         "First_yr_sch",
+                                                         "New YBFS (actual)",
+                                                         "New YBFS (fitted)",
+                                                         "ERP_3yr",
+                                                         "ERP_4yr",
+                                                         "ERP_5yr"),
+                                             selected = c("ERP_4yr"), multiple = FALSE)),
+                
+                conditionalPanel("input.Plot == `Preschool enrolment (%) x year`",
+                                 
+                                 pickerInput('num_denom', 'Select rates of preschool with different denominators:',
+                                             choices = c(
+                                               "Preschool (SS YBFS) / New YBFS (actual)",
+                                               "Preschool (SS YBFS) / New YBFS (fitted)",
+                                               "Preschool (SS YBFS) / ERP (4yrs p)",
+                                               "Preschool (SS YBFS) / ERP_4yr",
+                                               "Preschool (SS YBFS) / ERP_5yr",
+                                               "Preschool (SS YBFS) / Preschool (SS YBFS)",
+                                               "Preschool (SS YBFS) / State-specific YBFS",
+                                               "Preschool (SS YBFS) / First_yr_sch", 
+                                               
+                                               "Preschool (4-5 yrs) / New YBFS (actual)",
+                                               "Preschool (4-5 yrs) / New YBFS (fitted)",
+                                               "Preschool (4-5 yrs) / ERP (4yrs p)",
+                                               "Preschool (4-5 yrs) / ERP_4yr",
+                                               "Preschool (4-5 yrs) / ERP_5yr",
+                                               "Preschool (4-5 yrs) / Preschool (SS YBFS)",
+                                               "Preschool (4-5 yrs) / State-specific YBFS",
+                                               "Preschool (4-5 yrs) / First_yr_sch"),
+                                             
+                                             selected = c("Preschool (4-5 yrs) / ERP (4yrs p)", "Preschool (SS YBFS) / New YBFS (fitted)"), multiple = TRUE)),
+                
+                
+                pickerInput("State", 'Select states', choices = c(State),
+                            selected = c(State), multiple = TRUE),
+                
+                pickerInput("Year", 'Select year', choices = c(Year),
+                            selected = c("2013", "2014", "2015", "2016", "2017", "2018", "2019"), multiple = TRUE),
+                
+                radioButtons("growth", 'Cohort growth assumption:', choices = c("Zero", "Med", "High"),
+                             selected = "Med", inline = TRUE),
+                
+               # submitButton("Update view", icon("refresh")),
+                
+                
+                width = 3),
+  
+  mainPanel(
+    tabsetPanel(type = "tabs",
+                tabPanel("Plot", plotlyOutput('plot')),
+                tabPanel(style = "overflow-y:scroll; max-height: 700px","Data table", DT::dataTableOutput('Table'),
+                         downloadButton("downloadData", "Download Data table")),
+                
+                 tabPanel(style = "overflow-y:scroll; max-height: 700px","YBFS projection table", DT::dataTableOutput('modrange'),
+                          downloadButton("downloadProj", "Download ERP & YBFS projections")),
+                 
+                tabPanel(style = "overflow-y:scroll; max-height: 700px","Fitted values", DT::dataTableOutput('modpred'),
+                         downloadButton("downloadDatapred", "Download fitted values")),
+                
+                tabPanel(style = "overflow-y:scroll; max-height: 700px","Model summary", DT::dataTableOutput('modsum'),
+                         downloadButton("downloadDatasum", "Download model summary")),
+                
+                tabPanel(style = "overflow-y:scroll; max-height: 700px","Coefficients", DT::dataTableOutput('modfit'),
+                         downloadButton("downloadDatafit", "Download coefficients ")),
+                
+                tabPanel("About",
+                         br(),
+                         hr(),
+                         tags$div( tags$h2(tags$b("Explanatory notes")),
+                                   tags$h3(tags$b("Preschool enrolments and selected denominators")),
+                                   p("This app is designed to facilitate an assessment and comparison of existing and proposed data for the purpose of measuring progress towards targets of universal access to early childhood education."),
+                                   p("The major challenge for all methods which use separate aggregate counts for the numerator (i.e. Preschool enrolments) and denominators (such as ERP) is their alignment - i.e. the degree to which enrolments are a subset of the denominator population."),
+                                   p("While the ultimate goal for performance measurement of universal access to early childhood education is an integrated data approach based on the school enrolment (in one year) and preschool enolment (from previous year) of individuals, this information is not yet available."),
+                                   br(),
+                                   tags$h4(tags$b("Proposed YBFS methodology")), 
+                                   p("This app provides information and results from a possible interim solution (called the New YBFS)."), 
+                                   
+                                   p("The proposed method for the new YBFS is based on the published figure of children in their first year of school, but adjusted so the cohort in the first year of school (year n) aligns with that same cohort the preschool year (year n-1)."), 
+                                   
+                                   p("For the historical series (2013 to 2019), this adjustment was done by applying a factor to the first year of school count which is the inverse of the proportional change in ERP between 4 year olds in year n-1 and 5 year olds in year n."), 
+                                   
+                                   p("This derived measure from 2013-19 [called 'New YBFS (actual)' in this app] can then provide the basis for establishing relationship between the ERP and new YBFS through a linear regression."), 
+                                   
+                                   
+                                   p("Regression models to predict YBFS were fitted for each state and territory based on the ERP of 4 year olds and 5 year olds (as separate predictor variables). Based on the optimal fit of these two covariates, jurisdictions were either given the simple model (just ERP of 4 year olds) or the model accounting for both ERP of 4 year olds and the ERP of 5 year olds."), 
+                                   
+                                   p("Once the linear models are fit, it is possible to predict the YBFS value for 2020 from the 2020 ERP.  Because it is also of interest for planners and policy-makers to project demand and program costs up to 2025, this method is extended to incorporate an ERP projection."), 
+                                   
+                                   p("Most of this projection (up to 2024) is based on the progression of cohorts who were  already aged 0-4 and accounted for in the Dec 2020 ERP.  The only assumption required to project these cohorts is the impact of each state's annual migration. Based the average annual cohort change (by state and age) over 2015-19, we have applied three assumptions of cohort change:"), 
+                                   
+                                   tags$ul(
+                                   tags$li(tags$b("High"), " - equivalent to the average from 2015-19. For Australia overall this growth ranged from 0.7% between age 0 and 1 year, to 1.2% for the cohort growth between age 4  and 5 years."),
+                                   
+                                   tags$li(tags$b("Medium"), " - half the rate of change used in the 'high' assumption"),
+                                   
+                                   tags$li(tags$b("Low"), " - zero change, so the size of the cohort size remains unchanged as it ages")),
+                                   
+                                   p("In addition to projecting the existing cohorts (born before 2021), it was necessary to assume the starting size (0 year olds) of the 2021 cohort. This was simply done as the average of the previous three years (2018-20)."),
+                                   
+                                   br(),
+                                   tags$h4(tags$b("Data definitions")), 
+                                   
+                                   
+                                   tags$ul(
+                                     
+                                     tags$li(tags$b("Preschool (SS YBFS)"), " -  the number of preschool enrolments taking account of state-specific age eligibility for starting preschool and school of the state in which the child usually resides and the child's date of birth. For New South Wales and Victoria adjustment factors have been applied to account for the rates at which children proceed from preschool to school education. Accounting for the state-specific entry provisions is also known as the state- specific Year Before Full-time Schooling (state-specific YBFS). Data source:",
+                                             tags$a(href="https://www.abs.gov.au/statistics/people/education/preschool-education-australia/latest-release", target="_blank", "Preschool Education Australia, Table 28.")),
+                                     br(),
+                                     
+                                     
+                                     tags$li(tags$b("Preschool (4-5 yrs)"), " -  the number of preschool enrolments among all 4 and 5 year olds.  Data source:",
+                                             tags$a(href="https://www.abs.gov.au/statistics/people/education/preschool-education-australia/latest-release", target="_blank", "Preschool Education Australia, Table 2.")),
+                                     br(),
+                                     
+                                     
+                                     tags$li(tags$b("First year school (lagged)"), " - the number of enrolments of children in their first year of school. Note that the Schools reference year for this count is the year after the preschool year. Data source:", 
+                                             tags$a(href= "https://www.abs.gov.au/statistics/people/education/schools/latest-release#data-download", target="_blank", "Schools, Australia Table 42b")),
+                                     br(),
+                                     
+                                     
+                                     tags$li(tags$b("New YBFS (actual)"), " - the adjusted estimate of 'First year of school' to account for within-cohort ERP growth between ages 4 and 5 years (described further above in 'Proposed YBFS methodology').  "), 
+                                             
+                                     br(),
+                                     
+                                     tags$li(tags$b("New YBFS (fitted)"), " - the modelled estimate of YBFS based on the linear relationship between 'New YBFS (actual)' and the ERP of 4 and 5 year olds as described above in 'Proposed YBFS methodology'."), 
+                                     
+                                     br(),
+                                     
+                                     tags$li(tags$b("ERP_3yr, ERP_4yr, ERP_5yr"), " - up to 2020, these are the latest estimates of the Estimated Resident Population (ERP) for 3, 4 and 5 year olds. From 2021, these are projections as described above in 'Proposed YBFS methodology'."), 
+                                     
+                                     br(),
+                                     
+                                     
+                                     tags$li(tags$b("ERP (4yrs p)"), " - the ", tags$em("preliminary"), "ERP of four year olds. Because the components of population in any quarter are updated based on more complete information following first publication they are denoted 'preliminary' for the 12 months following their intial publication, before becoming 'revised'.  The 'preliminary' estimate is presented here because this reflects the actual data provided in each year to measure the UANP indicator. While the timeliness imperative for national reporting means these revised figures were not used, but their inclusion here can be used to assess the data quality impact of using preliminary ERP. To access the original historical data, please see the time-series spreadsheets available for download from the ",
+                                             tags$a(href="https://www.abs.gov.au/statistics/people/population/national-state-and-territory-population", target="_blank",
+                                                    "'Previous releases' section of National, state and territory population.")),
+                                     br(),
+                                     
+                                     
+                                     tags$li(tags$b("State-specific YBFS"), " -  an adjustment made to the ERP to align the estimated population count with the state-specific age requirements. The method uses the monthly pattern of births to distribute the annual aggregate ERP by month of birth. The aim of deriving the month of birth estimate of ERP by state in which the child usually resides is to allow the ERP denominators to be tailored by month of birth to be conceptually equivalent to the state-specific preschool age requirements.  For New South Wales and Victoria, this method also takes account of the proportion of younger children in preschool who are likely to proceed to their first year of school in the following year.  A deduction is also made for the number of children aged 4 and 5 years of age in the state-specific YBFS cohorts who were attending school in each state/territory. For more information, please refer 'Preschool program' and 'Measurement concepts' in the",
+                                             tags$a(href="https://www.abs.gov.au/methodologies/preschool-education-australia-methodology/2020", target="_blank",
+                                                    "Methodology"), "section of Preschool Education, Australia.")),
+                                   br(),      
+                                   
+                                   tags$h4(tags$b("Further information")),
+                                   
+                                   tags$p("For more information, please contact ABS Education and Training Statistics Section:",
+                                          a("ABS Education and Training Statistics", href="mailto:NCETS_2015_Plus_WDB@abs.gov.au"))
+                                   
+                         ))))))
+                                   
+                                   
+                       
+## Server
+server <- function(input, output) {
+  
+  S <- reactive({
+    list(State=input$State)
+  })
+  
+  Y <- reactive({
+    list(Year=input$Year)
+  })
+  
+  D <- reactive({
+    list(Series=input$Series)
+  })
+  
+  Dx <- reactive({
+    list(Seriesx=input$Seriesx)
+  })
+  
+  
+  A <- reactive({
+    list(growth=input$growth)
+  })
+  
+  Nm<- reactive({
+    list(num_denom=input$num_denom)
+  })
+  
+  dfLc <- reactive({  YBFS_07L %>%
+      filter(Assumption %in% c("N.A.", A()$growth)) %>%
+      filter(state %in% S()$State) %>%
+      filter(Year %in% Y()$Year) %>%
+      filter(Series %in% D()$Series)
+  })
+  
+  
+  dfLcx <- reactive({ YBFS_07L %>%
+      filter(Assumption %in% c("N.A.", A()$growth)) %>%
+      filter(state %in% S()$State) %>%
+      filter(Year %in% Y()$Year) %>%
+      filter(Series == Dx()$Seriesx)
+  })
+  
+  dfLr <- reactive({  YBFS_07L %>%
+      filter(Assumption %in% c("N.A.", A()$growth)) %>%
+      filter(state %in% S()$State) %>%
+      filter(Year %in% Y()$Year) %>%
+      filter(`Numerator / Denominator` %in% Nm()$num_denom)
+  })
+  
+  Tablec <-  reactive({ YBFS_07L %>%
+      filter(Assumption %in% c("N.A.", A()$growth)) %>%
+      filter(state %in% S()$State) %>%
+      filter(Year %in% Y()$Year) %>%
+      filter(Series %in% D()$Series) %>%
+      select(Year, state, Series, value, ERP_4yr) %>%
+      rename(State = state) %>%
+      distinct() %>%
+      drop_na()
+  })
+  
+  
+  Tabler <-  reactive({  YBFS_07L %>%
+      filter(Assumption %in% c("N.A.", A()$growth)) %>%
+      filter(state %in% S()$State) %>%
+      filter(Year %in% Y()$Year) %>%
+      filter(`Numerator / Denominator` %in% Nm()$num_denom) %>%
+      select(Year, state, `Numerator / Denominator`, Numerator, Series, value, Percent) %>%
+      rename(State = state) %>%
+      distinct() %>%
+      drop_na()
+  })
+  
+  
+  Tablex <-  reactive({  YBFS_07L %>%
+      filter(Assumption %in% c("N.A.", A()$growth)) %>%
+      filter(state %in% S()$State) %>%
+      filter(Year %in% Y()$Year) %>%
+      filter(Series == Dx()$Seriesx) %>%
+      select(Year, state, `New YBFS (actual)`, Series, value) %>%
+      rename(State = state) %>%
+      distinct() %>%
+      drop_na()
+  })
+  
+  
+  
+  Sumtab <- reactive({ dfLc %>%
+      filter(state %in% S()$State) %>%
+      filter(Year %in% Y()$Year)
+  })
+  
+  
+# model tables
+ 
+ modfittbl <- reactive({ state_coeff %>%
+            filter(state %in% S()$State)
+      })
+  
+ modsummtbl <- reactive({ state_summ %>%
+                filter(state %in% S()$State)
+      })
+  
+ modpredtbl <- reactive({ YBFS_07w2 %>%
+      filter(state %in% S()$State) %>%
+      filter(Year %in% Y()$Year) %>% 
+      filter(Assumption %in% c("N.A.", A()$growth)) 
+  })
+  
+ 
+  Proj_ranges <- reactive({ YBFS_ranges %>%
+      filter(State %in% S()$State) %>% 
+      filter(State != "Aust")
+  })
+ 
+  
+ output$plot <- renderPlotly({
+    
+    if(input$Plot == "Series x year" & input$CI == "On"){
+      p <- ggplot(dfLc(), aes(x= Date, y = value, colour = Series, group = Series)) +
+        geom_line(size = .8)+
+        geom_point(size = 2) +
+        geom_ribbon(aes(ymin = lower, ymax = upper), fill = "grey70", alpha = 0.3)+
+        scale_y_continuous(labels = comma)+
+        theme_few()+
+        scale_colour_manual(values = abscol)+
+        xlab("Year")+
+        ylab("n")
+      
+      
+      p <- p + facet_wrap(~ state, scales = "free")
+    }
+   
+   if(input$Plot == "Series x year" & input$CI == "Off"){
+     p <- ggplot(dfLc(), aes(x= Date, y = value, colour = Series, group = Series)) +
+       geom_line(size = .8)+
+       geom_point(size = 2) +
+       scale_y_continuous(labels = comma)+
+       theme_few()+
+       scale_colour_manual(values = abscol)+
+       xlab("Year")+
+       ylab("n")
+     
+     
+     p <- p + facet_wrap(~ state, scales = "free")
+   }
+   
+    
+    if(input$Plot == "Linear relationship of new YBFS x ERP"){
+      
+      p <- ggplot(dfLcx(), aes(x = value, y = `New YBFS (actual)`))+
+        geom_point(size = 2) +
+        geom_smooth(method = lm)+
+        scale_x_continuous(labels = comma)+
+        scale_y_continuous(labels = comma)+
+        scale_colour_manual(values = abscol)+
+        scale_color_few()+
+        xlab(input$Seriesx)+
+        ylab("New YBFS")
+      
+      p <- p + facet_wrap(~ state, scales = "free")
+    }
+    
+    if(input$Plot == "Preschool enrolment (%) x year"){
+      p <- ggplot(dfLr(), aes(x= Date, y = Percent, colour = `Numerator / Denominator`, group = `Numerator / Denominator`)) +
+        geom_line(size = .8)+
+        geom_point(size = 2) +
+        geom_hline(yintercept=100, size = 0.5, alpha = 0.5, linetype = 'dotted', color = "black")+
+        scale_y_continuous(labels = comma)+
+        theme_few()+
+        scale_colour_manual(values = abscol)+
+        xlab("Year")+
+        ylab("Percent")
+      
+      p <- p + facet_wrap(~ state)
+    }
+    
+    
+    ggplotly(p, height = 780, width = 1350, autosize= TRUE, tooltip = c("x", "y", "colour", "ymin", "ymax") )
+    
+  })
+  
+  
+  output$Table <- DT::renderDataTable({
+    
+    if(input$Plot == "Series x year"){
+      
+      T <- Tablec()
+    }
+    
+    if(input$Plot == "Preschool enrolment (%) x year"){
+      
+      T <- Tabler()
+    }
+    
+    if(input$Plot == "Linear relationship of new YBFS x ERP"){
+      
+      T <- Tablex()
+    }
+    
+    T
+  })
+  
+  
+  output$modfit <- DT::renderDataTable({
+    
+    fit <- modfittbl()
+    
+    fit
+    
+  })
+  
+  output$modsum <- DT::renderDataTable({
+    
+    sum <- modsummtbl()
+    sum
+  })
+  
+  output$modpred <- DT::renderDataTable({
+    
+    pred <- modpredtbl()
+    pred
+  })
+  
+  
+   output$modrange <- DT::renderDataTable({
+     
+     ranges <- Proj_ranges()
+     ranges
+   })
+  
+  
+  
+    # Downloadable xlsx --
+  
+  # DataTable 1
+  
+  
+  TableDL <- reactive({
+    
+    if(input$Plot == "Series x year"){
+      
+      T <- Tablec()
+    }
+    
+    if(input$Plot == "Preschool enrolment (%) x year"){
+      
+      T <- Tabler()
+    }
+    
+    if(input$Plot == "Linear relationship of new YBFS x ERP"){
+      
+      T <- Tablex()
+    }
+    
+    T
+  })
+  
+  
+  output$downloadData <- downloadHandler(
+    filename = function() {
+      paste("Selected YBFS data", ".xlsx")},
+    content = function(file) { write_xlsx(TableDL(), path = file) }
+  )
+  
+  # Modelfit
+  TableDLF <- reactive({
+    
+    modfittbl()
+    
+  })
+  
+  output$downloadDatafit <- downloadHandler(
+    filename = function() {
+      paste("Model fit", ".xlsx")},
+    content = function(file) { write_xlsx(TableDLF(), path = file) }
+  )
+  
+  # Modelpred
+  TableDLP <- reactive({
+    
+    modpredtbl()
+    
+  })
+  
+  output$downloadDatapred <- downloadHandler(
+    filename = function() {
+      paste("Model predict", ".xlsx")},
+    content = function(file) { write_xlsx(TableDLP(), path = file) }
+  )
+  
+  # Modelsum
+  
+  TableDLS <- reactive({
+    
+    modsummtbl()
+    
+  })
+  
+  output$downloadDatasum <- downloadHandler(
+    filename = function() {
+      paste("Model summary", ".xlsx")},
+    content = function(file) { write_xlsx(TableDLS(), path = file) }
+  )
+  
+  
+  # Ranges 
+    TableRange <- reactive({
+    
+      Proj_ranges()
+    
+  })
+  
+  output$downloadProj <- downloadHandler(
+    filename = function() {
+      paste("YBFS ranges", ".xlsx")},
+    content = function(file) { write_xlsx(TableRange(), path = file) }
+  )
+
+  
+}
+
+#========================================
+shinyApp(ui, server)
+#========================================
+# Deployed at: https://atyepa.shinyapps.io/YBFS_lm/
