@@ -212,7 +212,7 @@ YBFS_07w <- state_fit %>%
 
 # Select columns for the 'Fitted' display/download table in the app
 YBFS_07w2 <- YBFS_07w %>% 
-  select(2,4:8, 16, 18, 23,24) %>% 
+  select(2,4:8, 16, 18, 25,26) %>% 
   mutate(`New YBFS (fitted)` = round(`New YBFS (fitted)`,0)) %>% 
   rename(`ERP 3yr` = ERP_3yr, `ERP 4yr` = ERP_4yr, `ERP 5yr` = ERP_5yr)
          
@@ -238,13 +238,37 @@ YBFS_07L2 <- YBFS_07L1 %>%
   mutate(Percent45 = round(Numerator45/value*100,1)) 
   
 YBFS_07La <-  YBFS_07L2 %>% 
-  select(1:16)
+  select(1:5, 8:18)
 
 YBFS_07L <- YBFS_07L2 %>% 
-  select(1:14, 17,18) %>% 
+  select(1:5, 8:16, 19,20) %>% 
   rename(`Numerator / Denominator` = `Numerator / Denominator45`, Percent = Percent45) %>% 
   bind_rows(YBFS_07La) %>% 
   arrange(state)
+
+
+#*********************************************************************
+# Make a Table for YBFS 2020 - 2025 for States fitted zero, medium high 
+#*********************************************************************
+YBFS_sw <- YBFS_07L %>% 
+  filter(Series == "New YBFS (fitted)", yr > 2020) %>% 
+  select(1,4,5,8,9,12, 14) %>% 
+  rename(YBFS_fitted = value) %>% 
+  distinct()
+
+YBFS_sw2 <- YBFS_sw %>% 
+      pivot_wider(names_from = Assumption, values_from = c(ERP_4yr, YBFS_fitted, lower, upper)) 
+
+nnames <- c("Year", "State", 
+            "ERP 4yrs (zero)", "ERP 4yrs (med)", "ERP 4yrs (high)",
+            "YBFS (zero)", "YBFS (med)", "YBFS (high)",
+            "YBFS (zero, lower CI)", "YBFS (med, lower CI)", "YBFS (high, lower CI)",
+            "YBFS (zero, upper CI)", "YBFS (med, upper CI)", "YBFS (high, upper CI)")
+
+colnames(YBFS_sw2) <- nnames 
+
+YBFS_ranges <- YBFS_sw2 %>% 
+  select(1:5,6,9,12,7,10,13, 8, 11, 14 )
 
 
 #*********************************
@@ -384,6 +408,9 @@ ui <- shinyUI(fluidPage(
                 tabPanel(style = "overflow-y:scroll; max-height: 700px","Data table", DT::dataTableOutput('Table'),
                          downloadButton("downloadData", "Download Data table")),
                 
+                 tabPanel(style = "overflow-y:scroll; max-height: 700px","YBFS projection table", DT::dataTableOutput('modrange'),
+                          downloadButton("downloadProj", "Download ERP & YBFS projections")),
+                 
                 tabPanel(style = "overflow-y:scroll; max-height: 700px","Fitted values", DT::dataTableOutput('modpred'),
                          downloadButton("downloadDatapred", "Download fitted values")),
                 
@@ -590,6 +617,12 @@ server <- function(input, output) {
       filter(Assumption %in% c("N.A.", A()$growth)) 
   })
   
+ 
+  Proj_ranges <- reactive({ YBFS_ranges %>%
+      filter(State %in% S()$State) %>% 
+      filter(State != "Aust")
+  })
+ 
   
  output$plot <- renderPlotly({
     
@@ -700,7 +733,15 @@ server <- function(input, output) {
   })
   
   
-  # Downloadable xlsx --
+   output$modrange <- DT::renderDataTable({
+     
+     ranges <- Proj_ranges()
+     ranges
+   })
+  
+  
+  
+    # Downloadable xlsx --
   
   # DataTable 1
   
@@ -773,9 +814,22 @@ server <- function(input, output) {
   )
   
   
+  # Ranges 
+    TableRange <- reactive({
+    
+      Proj_ranges()
+    
+  })
+  
+  output$downloadProj <- downloadHandler(
+    filename = function() {
+      paste("YBFS ranges", ".xlsx")},
+    content = function(file) { write_xlsx(TableRange(), path = file) }
+  )
+
+  
 }
 
 #========================================
 shinyApp(ui, server)
 #========================================
-
