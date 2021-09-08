@@ -249,14 +249,8 @@ YBFS_07L <- YBFS_07L2 %>%
 # Make a Table for YBFS 2020 - 2025 for States fitted zero, medium high 
 #*********************************************************************
 
-# Assign latest ERP year (prior to projections)
-latest_yr <- YBFS_04w %>% 
-  filter(Assumption == "N.A.") %>% 
-  summarise(yr = max(yr))
-
-
 YBFS_fL <- YBFS_07L %>% 
-  filter(Series == "New YBFS (fitted)", yr >= latest_yr$yr) %>% 
+  filter(Series == "New YBFS (fitted)", yr >= 2016) %>%  
   select(1,4,5,8,9,12, 14) %>% 
   rename(YBFS_fitted = value) %>% 
   distinct()
