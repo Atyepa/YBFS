@@ -250,7 +250,7 @@ YBFS_07L <- YBFS_07L2 %>%
 #*********************************************************************
 
 YBFS_fL <- YBFS_07L %>% 
-  filter(Series == "New YBFS (fitted)", yr >= 2016) %>%  
+  filter(Series == "New YBFS (fitted)", yr >= 2015) %>%  
   select(1,4,5,8,9,12, 14) %>% 
   rename(YBFS_fitted = value) %>% 
   distinct()
