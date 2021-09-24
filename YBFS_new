@@ -279,7 +279,7 @@ YBFS_07L <- YBFS_07L2 %>%
 #*********************************************************************
 
 YBFS_fL <- YBFS_07L %>% 
-  filter(Series == "New YBFS (fitted)", yr >= 2015) %>%  
+  filter(Series == "New YBFS (fitted)", yr >= 2013) %>%  
   select(1,4,5,11,10,7,14) %>% 
   rename(YBFS_fitted = value) %>% 
   distinct()
@@ -330,7 +330,8 @@ colnames(YBFS_sw2) <- nnames
 
 YBFS_ranges <- YBFS_sw2 %>% 
   select(1:5,6,9,12,7,10,13, 8, 11, 14 ) %>% 
-  mutate(Date = make_date(Year, 6, 30))
+  mutate(yr = as.numeric(Year))
+  #mutate(Date = make_date(Year, 6, 30))
 
 
 #*********************************
@@ -348,8 +349,9 @@ State <- YBFS_07L %>%
 
 State <- as.list(State$State)
 
-dmin <- min(YBFS_07L$Date)
-dmax <- max(YBFS_07L$Date)
+dmin <- min(YBFS_07L$yr)
+dmax <- max(YBFS_07L$yr)
+
 
 Year. <- YBFS_07L %>%
   select(Year) %>%
@@ -459,11 +461,11 @@ ui <- shinyUI(fluidPage(
         
          
         sliderInput("dateRange","Year range:",
-                    min = as.Date(dmin),
-                    max = as.Date(dmax),
-                    value=as.Date(c(dmin, dmax)),
-                    step = 300,
-                    timeFormat="%Y"),
+                    min = (dmin),
+                    max = (dmax),
+                    value= (c(dmin, dmax)),
+                    sep = "",
+                    step = 1),
         
         
                
@@ -611,8 +613,8 @@ server <- function(input, output) {
     dfLc <- reactive({  YBFS_07L %>%
       filter(Assumption %in% c("N.A.", A()$growth)) %>%
       filter(State %in% S()$State) %>%
-      filter(Date >= input$dateRange[1]) %>%
-      filter(Date <= input$dateRange[2]+1) %>%  
+      filter(yr >= input$dateRange[1]) %>%
+      filter(yr <= input$dateRange[2]) %>%  
       filter(Series %in% D()$Series)
   })
   
@@ -620,24 +622,24 @@ server <- function(input, output) {
   dfLcx <- reactive({ YBFS_07L %>%
       filter(Assumption %in% c("N.A.", A()$growth)) %>%
       filter(State %in% S()$State) %>%
-      filter(Date >= input$dateRange[1]) %>%
-      filter(Date <= input$dateRange[2]+1) %>%
+      filter(yr >= input$dateRange[1]) %>%
+      filter(yr <= input$dateRange[2]) %>%
       filter(Series == Dx()$Seriesx)
   })
   
   dfLr <- reactive({  YBFS_07L %>%
       filter(Assumption %in% c("N.A.", A()$growth)) %>%
       filter(State %in% S()$State) %>%
-      filter(Date >= input$dateRange[1]) %>%
-      filter(Date <= input$dateRange[2]+1) %>%
+      filter(yr >= input$dateRange[1]) %>%
+      filter(yr <= input$dateRange[2]) %>%
       filter(`Numerator / Denominator` %in% Nm()$num_denom)
   })
   
   Tablec <-  reactive({ YBFS_07L %>%
       filter(Assumption %in% c("N.A.", A()$growth)) %>%
       filter(State %in% S()$State) %>%
-      filter(Date >= input$dateRange[1]) %>%
-      filter(Date <= input$dateRange[2]+1) %>%
+      filter(yr >= input$dateRange[1]) %>%
+      filter(yr <= input$dateRange[2]) %>%
       filter(Series %in% D()$Series) %>%
       select(Year, State, Series, value, ERP_4yr) %>%
       distinct() %>%
@@ -648,8 +650,8 @@ server <- function(input, output) {
   Tabler <-  reactive({  YBFS_07L %>%
       filter(Assumption %in% c("N.A.", A()$growth)) %>%
       filter(State %in% S()$State) %>%
-      filter(Date >= input$dateRange[1]) %>%
-      filter(Date <= input$dateRange[2]+1) %>%
+      filter(yr >= input$dateRange[1]) %>%
+      filter(yr <= input$dateRange[2]) %>%
       filter(`Numerator / Denominator` %in% Nm()$num_denom) %>%
       select(Year, State, `Numerator / Denominator`, Numerator, Series, value, Percent) %>%
       distinct() %>%
@@ -660,8 +662,8 @@ server <- function(input, output) {
   Tablex <-  reactive({  YBFS_07L %>%
       filter(Assumption %in% c("N.A.", A()$growth)) %>%
       filter(State %in% S()$State) %>%
-      filter(Date >= input$dateRange[1]) %>%
-      filter(Date <= input$dateRange[2]+1) %>% 
+      filter(yr >= input$dateRange[1]) %>%
+      filter(yr <= input$dateRange[2]) %>%
       filter(Series == Dx()$Seriesx) %>%
       select(Year, State, `New YBFS (actual)`, Series, value) %>%
       distinct() %>%
@@ -691,9 +693,9 @@ server <- function(input, output) {
   Proj_ranges <- reactive({ YBFS_ranges %>%
       filter(state %in% S()$State) %>% 
       filter(state != "Aust") %>% 
-      filter(Date >= input$dateRange[1]) %>%
-      filter(Date <= input$dateRange[2]+1) %>% 
-      select(-Date)
+      filter(yr >= input$dateRange[1]) %>%
+      filter(yr <= input$dateRange[2]) %>%
+      select(-yr)
   })
   
   
@@ -906,4 +908,3 @@ server <- function(input, output) {
 #========================================
 shinyApp(ui, server)
 #========================================
-
