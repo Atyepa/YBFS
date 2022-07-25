@@ -524,7 +524,7 @@ ass_lvl <- c("N.A.", "ERP_A", "ERP_B")
 #--- Load population projections -- 
 # Projections updated with 2021 rebased ERP :
 
-Proj_2025_4_5 <- read.xlsx("Proj2025_4yr_5yrs.xlsx") 
+Proj_2025_4_5 <- read.xlsx("https://github.com/Atyepa/YBFS/raw/main/Proj2025_4yr_5yrs.xlsx") 
 
 
 # Make df for `SA (adj)`
@@ -543,7 +543,7 @@ newdat <- Proj_2025_4_5 %>%
   mutate(Assumption = factor(Assumption, levels = ass_lvl))
 
 #--- Load (actual 2006-2020) YBFS -- 
-YBFS02 <- read_xlsx("//Path/YBFS02_SAadj.xlsx") 
+YBFS02 <- read_xlsx("YBFS02_SAadj.xlsx") 
 
 YBFS02 <- YBFS02 %>% 
   mutate(state = factor(state, levels = State_lvl2))
