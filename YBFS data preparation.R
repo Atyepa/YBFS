@@ -68,7 +68,9 @@ Table42b <- "https://www.abs.gov.au/statistics/people/education/schools/2021/Tab
 
 download.file(Table42b,"datacube.xlsx", mode = "wb" )
 
-Table2 <- read_excel(sheet = 3, range = "A5:M72866")
+datapath <- "./datacube.xlsx"
+
+Table2 <- read_excel(datapath, sheet = 3, range = "A5:M72866")
 
 Fdn_yr <- Table2 %>% 
   select(1,2,9,10,13) %>% 
