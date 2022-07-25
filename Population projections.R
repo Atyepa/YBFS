@@ -1,6 +1,6 @@
-#********************************************************************************************
+#----------------------------------------------------------------------
 #---- POPULATION PROJECTIONS to 2025----
-#********************************************************************************************
+#----------------------------------------------------------------------
 # Projecting the ERP to 2025 consists of 3 main steps:
 
 # 1 Arranging available ERP (to June 2021) into a cohort table which will form the base of a cohort projection
@@ -26,13 +26,14 @@ library(labeling)
 library(scales)
 library(crosstalk)
 library(farver)
-library(reasdmx)
+library(readsdmx)
 library(DT)
 library(utf8)
 library(fpp3)
 library(rematch)
 library(htmlwidgets)     
 library(trelliscopejs)  
+
 
 
 #---- Colours for plotting----
@@ -159,9 +160,9 @@ Table_Cohort_ERP21 %>%
 # The 'Table_Cohort_ERP21' table above provides the basis for projecting of ERP from 2021 thru to age 4 years by 2025. 
 # All we need now is the cohort adjustment factors to apply to account for migration. 
 
-#***************************************************************************************************
+#------------------------------------------------------------------------------------------------------
 #---- Assume rates of population growth (change) within cohorts (accounting for net migration)----
-#****************************************************************************************************
+#------------------------------------------------------------------------------------------------------
 
 # In this scenario we have incomplete birth cohorts from 2017 to 2021. Our job is to fill in the NAs by advancing the cohort with a migration adjustment.
 # 
@@ -481,7 +482,7 @@ Proj_2025_4_5 <- Proj_2025_4_5 %>%
 
 
 # Save for YBFS model
-write.xlsx(Proj_2025_4_5, file = "./Proj2025_4yr_5yrs.xlsx")
+write.xlsx(Proj_2025_4_5, file = "./Proj2025_4yr_5yrs.xlsx", overwrite = TRUE)
 
 # PLot  ERP 4
 Proj_2025_4_5 %>% 
@@ -507,5 +508,4 @@ dflist <- list("Cohorts to project" = Table_Cohort_ERP21,  "Avg cohort chg 0-6" 
                "ERP and Projection" = Proj_2025, 
                "Projection 4 5 yrs" = Proj_2025_4_5)
 
-write.xlsx(dflist, "ERP_projection.xlsx")
-
+write.xlsx(dflist, "./ERP_projection.xlsx", overwrite = TRUE)
