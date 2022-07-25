@@ -35,8 +35,6 @@ library(htmlwidgets)
 library(trelliscopejs)  
 
 
-setwd("//Corp/absdfs/workgroup/AdminData/NCETS/ECEC_Data/YBFS/Modelling_update")
-
 #---- Colours for plotting----
 abscol <- c("#4FADE7", 	"#1A4472", 	"#F29000", 	"#993366", 	"#669966", 	"#99CC66",
             "#CC9966", 	"#666666", 	"#8DD3C7", 	"#BEBADA", 	"#FB8072", 	"#80B1D3",
@@ -483,7 +481,7 @@ Proj_2025_4_5 <- Proj_2025_4_5 %>%
 
 
 # Save for YBFS model
-write.xlsx(Proj_2025_4_5, file = "//Corp/absdfs/workgroup/AdminData/NCETS/ECEC_Data/YBFS/Modelling_update/Proj2025_4yr_5yrs.xlsx")
+write.xlsx(Proj_2025_4_5, file = "./Proj2025_4yr_5yrs.xlsx")
 
 # PLot  ERP 4
 Proj_2025_4_5 %>% 
