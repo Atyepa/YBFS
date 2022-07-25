@@ -44,8 +44,6 @@ library(trelliscopejs)
 library(ggpubr)
 
 
-setwd("//Modelling_update")
-
 # ---- Colours for plotting----
 abscol <- c("#4FADE7", 	"#1A4472", 	"#F29000", 	"#993366", 	"#669966", 	"#99CC66",
             "#CC9966", 	"#666666", 	"#8DD3C7", 	"#BEBADA", 	"#FB8072", 	"#80B1D3",
@@ -70,9 +68,7 @@ Table42b <- "https://www.abs.gov.au/statistics/people/education/schools/2021/Tab
 
 download.file(Table42b,"datacube.xlsx", mode = "wb" )
 
-datapath <- "./datacube.xlsx"
-
-Table2 <- read_excel(datapath, sheet = 3, range = "A5:M72866")
+Table2 <- read_excel(sheet = 3, range = "A5:M72866")
 
 Fdn_yr <- Table2 %>% 
   select(1,2,9,10,13) %>% 
@@ -219,7 +215,6 @@ cohort_chg6 <- ERP2 %>%
             by = c("state", "yr" = "Yr_turn_6")) %>% 
   mutate(Year = make_date(yr-1, 6, 30)) 
 
-
 # Make table of adj
 Chg_4_6<- cohort_chg %>% 
   filter(Cohort %in% c(2015, 2016)) %>% 
@@ -227,7 +222,6 @@ Chg_4_6<- cohort_chg %>%
   select(-3:-6, -Age_7) %>% 
   mutate(chg_4_5 = case_when(Cohort == 2016 ~ Age_5-Age_4, TRUE ~ 0 )) %>% 
   mutate(chg_5_6 = case_when(Cohort == 2015 ~ Age_6-Age_5, TRUE ~ 0 )) 
-
   
 # Adjust vals on FndnYr_lag
 FndnYr_adj <- FndnYr_lag %>% 
@@ -240,10 +234,8 @@ FndnYr_adj <- FndnYr_lag %>%
   drop_na() %>% 
   mutate(YBFS = round(val * ((P5*inv_chg_4_5)+(P6*inv_chg_5_6))))
 
-
 YBFS <- FndnYr_adj %>% 
   select(Year, state, YBFS)
-
 
 #-- Join to ERP 4 & 5 
 # Subset ERP to Age 4,5
@@ -517,7 +509,7 @@ Corr13_20 %>%
   DT::datatable()
 
 # Save all jurisdiction's YBFS x ERP (+ SA adj. )
-write_xlsx(YBFS02_SAadj,"//path/YBFS02_SAadj.xlsx" ) 
+write_xlsx(YBFS02_SAadj,"YBFS02_SAadj.xlsx" ) 
 
 #=====================
 #---- Modelling ----
@@ -531,7 +523,9 @@ ass_lvl <- c("N.A.", "ERP_A", "ERP_B")
 
 #--- Load population projections -- 
 # Projections updated with 2021 rebased ERP :
-Proj_2025_4_5 <- read.xlsx("//path/Proj2025_4yr_5yrs.xlsx") 
+
+Proj_2025_4_5 <- read.xlsx("Proj2025_4yr_5yrs.xlsx") 
+
 
 # Make df for `SA (adj)`
 SA_proj <- Proj_2025_4_5 %>% 
